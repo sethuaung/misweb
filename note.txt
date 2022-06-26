@@ -1,0 +1,50 @@
+    # STEP 1. create migration
+    php artisan make:migration:schema add_expense_type --model=0
+    php artisan make:migration:schema create_saving_calculate --model=0
+    php artisan make:migration:schema create_general_journal_backups_table --model=0
+    php artisan make:migration add_group_status --table=""
+    php artisan make:migration add_general_type_journal --table="general_journals"
+    php artisan make:migration add_product_id_loan_payment --table="loan_payments"
+    php artisan migrate
+
+    php artisan make:migration create_loan_payment2_table
+
+    php artisan make:migration create_loan_outstanding_tem_table --model=0
+    php artisan make:migration create_frd_account_details2_table --create=frd_account_details2
+
+
+    php artisan make:migration add_round_id_gen --table="general_journals"
+    # STEP 2. create a model, a request and a controller for the admin panel
+    php artisan backpack:crud PaidSupportFund #use singular, not plural
+
+    # STEP 3. add a route to routes/backpack/custom.php (under the admin prefix and auth middleware):
+    php artisan backpack:base:add-custom-route "CRUD::resource('capital', 'CapitalCrudController');"
+
+    # STEP 4. add a sidebar item
+    php artisan backpack:base:add-sidebar-content "<li><a href='{{ backpack_url('capital') }}'><i class='fa fa-tag'></i> <span>Capital</span></a></li>"
+    composer dumpautoload
+    php artisan iseed addresses
+    php artisan db:seed --class=SettingsTableSeeder
+    //===================
+    php artisan make:import UsersImport --model=User
+    php artisan make:export UsersExport --model=User
+
+
+    php artisan config:cache
+    php artisan route:cache
+
+    php artisan cache:clear
+    php artisan view:clear
+
+DB_CONNECTION=mysql
+DB_HOST=139.162.5.17
+DB_PORT=3306
+DB_DATABASE=globesob_mfsmm
+DB_USERNAME=globesob_mfsmm
+DB_PASSWORD=EN4MbxfH7DuuayejBa
+COMPANY_REPORT_PART=company.mkt
+COMPANY_REPORT_PART=company.moeyan
+COMPANY_REPORT_PART=company.quicken
+
+INSERT INTO `settings`(`key`, `name`, `description`, `value`, `field`, `active`, `created_at`, `updated_at`, `created_by`, `updated_by`) VALUES ('cash_in', 'Cash In Reference', 'Cash In Reference Number', '{\"prefix\":\"CR-\",\"pad\":\"8\",\"use_date\":\"0\" }', '{\"name\":\"value\",\"label\":\"Value\",\"type\":\"ref_setting\"}', 1, '2020-01-01 00:00:00', '2019-05-27 12:41:17', 0, 0);
+INSERT INTO `settings`(`key`, `name`, `description`, `value`, `field`, `active`, `created_at`, `updated_at`, `created_by`, `updated_by`) VALUES ('cash_out', 'Cash Out Reference', 'Cash Out Reference Number', '{\"prefix\":\"CP-\",\"pad\":\"8\",\"use_date\":\"0\" }', '{\"name\":\"value\",\"label\":\"Value\",\"type\":\"ref_setting\"}', 1, '2020-01-01 00:00:00', '2019-05-27 12:41:17', 0, 0);

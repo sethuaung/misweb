@@ -1,0 +1,294 @@
+<?php
+/**
+ * Created by PhpStorm.
+ * User: phol
+ * Date: 2019-06-21
+ * Time: 23:06
+ */
+
+namespace App\Helpers;
+
+
+use App\Models\AccountChart;
+use App\Models\Branch;
+use App\Models\Charge;
+use App\Models\ChargeLoanProduct;
+use App\Models\ClientR;
+use App\Models\CompulsoryProduct;
+use App\Models\CompulsorySavingTransaction;
+use App\Models\Loan;
+use App\Models\Loan2;
+use App\Models\LoanCalculate;
+use App\Models\LoanCharge;
+use App\Models\LoanCompulsory;
+use App\Models\LoanImportList;
+use App\Models\LoanPayment;
+use App\Models\LoanPayment2;
+use App\Models\LoanProduct;
+use App\Models\NewMember;
+use App\Models\PaidDisbursement;
+use App\User;
+
+class MigrateData
+{
+    public static function get_pre_date($date,$repayment_term){
+        if($repayment_term == 'Monthly'){
+            return  IDate::dateAdd($date, UnitDay::MONTH,-1);
+        }else if($repayment_term == 'Weekly'){
+            return  IDate::dateAdd($date, UnitDay::DAY,-7);
+        }else if($repayment_term == 'Two-Weeks'){
+            return  IDate::dateAdd($date, UnitDay::DAY,-14);
+        }else if($repayment_term == 'Yearly'){
+            return  IDate::dateAdd($date, UnitDay::YEAR,-1);
+        }else{
+            return  IDate::dateAdd($date, UnitDay::DAY,-1);
+        }
+    }
+
+    public static function create_loan($client_id){
+        $rows = LoanImportList::where('client_id',$client_id)->get();
+        $arr = ['Monthly'=>'Month', 'Daily'=>'Day', 'Weekly'=>'Week', 'Two-Weeks'=>'Two-Weeks', 'Yearly'=>'Yearly'];
+        if($rows != null){
+            if(count($rows)>0){
+                foreach ($rows as $m){
+                    $loan = Loan2::where('client_id',$client_id)->where('loan_cycle',$m->loan_cycle)->first();
+                    $branch = Branch::where('code',$m->branch_code)->first();
+                    $user = User::where('user_code',$m->loan_officer_id)->first();
+                    $client = ClientR::where('client_number',$m->client_id)->first();
+                    $loan_product = LoanProduct::where('name',$m->loan_type)->first();
+                    if($loan == null){
+                        $loan = new Loan2();
+                    }
+                    $loan->disbursement_number = Loan::getSeqRef('loan');
+                    //$loan->disbursement_name = ;
+                    $loan->branch_id = optional($branch)->id;
+                    $loan->center_leader_id = $m->center_id;
+                    $loan->disbursement_status = 'Activated';
+                    $loan->loan_officer_id = optional($user)->id;
+                    //$loan->transaction_type_id = ;
+                    $loan->currency_id = 1;
+                    $loan->client_id = optional($client)->id;
+                    //$loan->seq = ;
+                    $loan->loan_application_date = $m->disbursement_date;
+                    $loan->first_installment_date = $m->first_repayment_date;
+                    $loan->loan_production_id = optional($loan_product)->id;
+                    $loan->loan_amount = $m->loan_amount;
+                    $loan->principle_receivable = $m->principle_outstanding;
+                    $loan->principle_repayment = $m->priciple_repayment;
+                    $loan->interest_receivable = $m->interest_outstanding;
+                    $loan->interest_repayment = $m->interest_repayment;
+                    $loan->loan_term_value = $m->term_pending_repayment;
+                    $loan->loan_term = $arr[$m->repayment_terms];
+                    $loan->repayment_term = $m->repayment_terms;
+                    $loan->interest_rate_period = $m->interest_period;
+                    $loan->interest_rate = $m->interest_rate*100;
+                    //$loan->loan_objective_id = ;
+                    //$loan->guarantor_id = ;
+                    //$loan->relationship_member = ;
+                    //$loan->disbursement_status = ;
+                    /*$loan->status_note_approve = ;
+                    $loan->status_note_date_approve = ;
+                    $loan->status_note_approve_by_id = ;
+                    $loan->status_note_declined = ;
+                    $loan->status_note_date_declined = ;
+                    $loan->status_note_declined_by_id = ;
+                    $loan->status_note_withdrawn = ;
+                    $loan->status_note_withdrawn_by_id = ;
+                    $loan->status_note_written_off = ;
+                    $loan->status_note_date_written_off = ;
+                    $loan->status_note_written_off_by_id = ;
+                    $loan->status_note_closed = ;
+                    $loan->status_note_date_closed = ;
+                    $loan->status_note_closed_by_id = ;
+                    $loan->status_note_activated = ;
+                    $loan->status_note_date_activated = ;
+                    $loan->status_note_activated_by_id = ;
+                    $loan->group_loan_id = ;*/
+                    $loan->you_are_a_group_leader = optional($client)->you_are_a_group_leader;
+                    $loan->you_are_a_center_leader = optional($client)->you_are_a_center_leader;
+                    //$loan->deposit_paid = ;
+                    if($loan->save()){
+                        if($loan_product != null){
+                            $compulsory_id = $loan_product->compulsory_id;
+                            $l_product_id = $loan_product->id;
+                            $charge_product = ChargeLoanProduct::where('loan_product_id',$l_product_id)->get();
+                            if($charge_product != null){
+                                foreach ($charge_product as $ch){
+                                    $charge = Charge::find($ch->charge_id);
+                                    if($charge->charge_option == 2) {
+                                        $amt = $charge->amount != null ? ($charge->amount??0 * $loan->loan_amount??0) / 100 : 0;
+                                    }else{
+                                        $amt = $charge->amount;
+                                    }
+                                    if($charge != null) {
+                                        if(optional($charge)->amount >0 && optional($charge)->charge_option >0) {
+                                            $l_c = new LoanCharge();
+                                            $l_c->loan_id = $loan->id;
+                                            $l_c->charge_id = optional($charge)->id;
+                                            $l_c->name = optional($charge)->name;
+                                            $l_c->amount = $amt??0;
+                                            $l_c->charge_option = optional($charge)->charge_option;
+                                            $l_c->charge_type = optional($charge)->charge_type;
+                                            //$m->status = 'Yes';
+                                            $l_c->save();
+                                        }
+                                    }
+                                }
+                            }
+                            if($compulsory_id>0){
+                                $c_product = CompulsoryProduct::find($compulsory_id);
+                                if($c_product != null){
+                                    if($c_product->charge_option == 2) {
+                                        $compulsory_amount = $c_product->saving_amount != null ? ($c_product->saving_amount * $loan->loan_amount) / 100 : 0;
+                                    }else{
+                                        $compulsory_amount = $c_product->saving_amount;
+                                    }
+                                    $c = new LoanCompulsory();
+                                    $c->loan_id = $loan->id;
+                                    $c->client_id = $loan->client_id;
+                                    $c->compulsory_id = $compulsory_id;
+                                    $c->product_name = optional($c_product)->product_name;
+                                    $c->saving_amount = $compulsory_amount??0;
+                                    $c->charge_option = optional($c_product)->charge_option;
+                                    $c->interest_rate = optional($c_product)->interest_rate;
+                                    $c->compound_interest = optional($c_product)->compound_interest;
+                                    $c->override_cycle = optional($c_product)->override_cycle;
+                                    $c->compulsory_number = optional($c_product)->code;
+                                    $c->compulsory_product_type_id = optional($c_product)->compulsory_product_type_id;
+                                    //$c->status = optional($c_product)->;
+                                    $c->save();
+                                }
+                            }
+                        }
+
+                        $date = MigrateData::get_pre_date($m->start_new_repayment_date,$loan->repayment_term);
+                        $first_date_payment = $m->start_new_repayment_date;
+                        $interest_method = 'declining-balance-principal';
+                        $principal_amount = $m->principle_outstanding;
+                        $loan_duration = $loan->loan_term_value;
+                        $loan_duration_unit = $loan->loan_term;
+                        $repayment_cycle = $loan->repayment_term;
+                        $loan_interest = $loan->interest_rate;
+                        $loan_interest_unit = $loan->interest_rate_period;
+                        MigrateData::gen_schedule($date, $first_date_payment, $interest_method,
+                            $principal_amount, $loan_duration, $loan_duration_unit, $repayment_cycle, $loan_interest, $loan_interest_unit,$loan->id);
+
+                        MigrateData::paid_disbursement($loan,$m);
+                    }
+                }
+            }
+        }
+    }
+    public static function gen_schedule($date, $first_date_payment, $interest_method,
+                                        $principal_amount, $loan_duration, $loan_duration_unit, $repayment_cycle, $loan_interest, $loan_interest_unit,$loan_id){
+        $repayment = MFS::getRepaymentSchedule($date, $first_date_payment, $interest_method,
+            $principal_amount, $loan_duration, $loan_duration_unit, $repayment_cycle, $loan_interest, $loan_interest_unit);
+        $i =1;
+
+        if ($repayment != null) {
+            if (is_array($repayment)) {
+                foreach ($repayment as $r) {
+                    $d_cal = new LoanCalculate();
+                    $d_cal->no = $i++;
+                    $d_cal->day_num = $r['day_num'];
+                    $d_cal->disbursement_id = $loan_id;
+                    $d_cal->date_s = $r['date'];
+                    $d_cal->principal_s = $r['principal'];
+                    $d_cal->interest_s = $r['interest'];
+                    $d_cal->penalty_s = 0;
+                    $d_cal->service_charge_s = 0;
+                    $d_cal->total_s = $r['payment'];
+                    $d_cal->balance_s = $r['balance'];
+                    $d_cal->save();
+                }
+            }
+        }
+    }
+    public static function paid_disbursement($loan,$m){
+        $cl = ClientR::find($loan->client_id);
+
+        $disburse = new PaidDisbursement();
+
+        $disburse->paid_disbursement_date = $loan->loan_application_date;
+        $disburse->reference = PaidDisbursement::getSeqRef('paid');
+        $disburse->contract_id = $loan->id;
+        $disburse->client_id = optional($cl)->id;
+        $disburse->loan_amount = $loan->loan_amount;
+        $disburse->total_money_disburse = $loan->loan_amount;
+        $disburse->disburse_amount = $loan->loan_amount;
+        $disburse->paid_by_tran_id = 1;
+        $disburse->cash_out_id = 32;
+        $disburse->client_nrc = optional($cl)->nrc_number;
+        $disburse->client_name = optional($cl)->name;
+        $disburse->cash_pay = $loan->loan_amount;
+        if($disburse->save()){
+            //PaidDisbursement::accDisburseTransaction($disburse);
+            MigrateData::repayment($disburse,$m);
+
+        }
+    }
+    public static function repayment($disburse,$m){
+        if($m->priciple_repayment >0){
+            $repay = new LoanPayment2();
+
+            $repay->payment_number = LoanPayment2::getSeqRef('repayment_no');
+            $repay->client_id = $disburse->client_id;
+            $repay->disbursement_id = $disburse->id;
+            $repay->principle = $m->priciple_repayment;
+            $repay->interest = $m->interest_repayment;
+            $repay->total_payment = $m->priciple_repayment;
+            $repay->payment = $m->priciple_repayment;
+            $repay->payment_date = $m->transaction_date;
+            $repay->cash_acc_id = $disburse->cash_out_id ;
+            if($repay->save()){
+                $loan_id = $repay->disbursement_id;
+                $principle = $repay->principle;
+                $interest = $repay->interest;
+                $saving = $repay->compulsory_saving;
+                $penalty = $repay->penalty_amount;
+                $payment = $repay->total_payment;
+                $row = $repay;
+                $arr_charge = [];
+
+                $acc = AccountChart::find($repay->cash_acc_id);
+
+                $depo = LoanPayment2::find($repay->id);
+                $depo->total_service_charge = 0;
+                $depo->acc_code = optional($acc)->code;
+                $depo->save();
+
+                //MFS::getRepaymentAccount($loan_id,$principle,$interest,$saving,$arr_charge,$penalty,$payment,$row);
+            }
+        }
+    }
+    public static function saving_amount($cl){
+        $client = NewMember::where('client_id',$cl->client_number)->first();
+        if(optional($client)->total_saving_principle_opening_amount >0) {
+            $disburse = PaidDisbursement::where('client_id', $cl->id)->orderBy('id', 'desc')->first();
+            $compulsory = LoanCompulsory::where('loan_id', optional($disburse)->contract_id)->first();
+            $transaction = new CompulsorySavingTransaction();
+            $transaction->customer_id = $cl->id;
+            $transaction->tran_id = optional($disburse)->id;
+            $transaction->train_type = 'deposit';
+            $transaction->train_type_ref = 'disbursement';
+            $transaction->tran_id_ref = optional($disburse)->contract_id;
+            $transaction->tran_date = date('Y-m-d');
+            $transaction->amount = optional($client)->total_saving_principle_opening_amount;
+
+            $transaction->loan_id = optional($disburse)->contract_id;
+            $transaction->loan_compulsory_id = $compulsory->id;
+            if ($transaction->save()) {
+                $loan_compulsory = LoanCompulsory::where('loan_id', optional($disburse)->contract_id)->first();
+                if ($loan_compulsory != null) {
+                    $loan_compulsory->compulsory_status = 'Active';
+                    //$loan_compulsory->principles = $loan_compulsory->principles + $transaction->amount;
+                    //$loan_compulsory->available_balance = $loan_compulsory->available_balance + $transaction->amount;
+                    if($loan_compulsory->save()){
+
+                    }
+                }
+            }
+        }
+
+    }
+}
